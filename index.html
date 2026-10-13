@@ -60,6 +60,7 @@
 
 <script>
 const GOAL = 30 * 60;          // норма в секундах
+const BONUS = 2 * 60;          // сколько секунд снимается за правильный ответ
 const KEY = "mathApp.v1";
 const $ = id => document.getElementById(id);
 const r = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
@@ -120,8 +121,11 @@ function check() {
   const v = $("a").value.trim();
   if (v === "") return;
   const d = day();
-  if (parseInt(v, 10) === cur[1]) {
-    d.ok++; $("fb").className = "ok"; $("fb").textContent = "Верно"; save(); render(); setTimeout(() => { $("fb").textContent = ""; }, 700); next();
+ if (parseInt(v, 10) === cur[1]) {
+  d.ok++;
+  d.secs = Math.min(GOAL, d.secs + BONUS);   // −2 минуты от оставшегося времени
+  $("fb").className = "ok"; $("fb").textContent = "Верно −2:00";
+  save(); render(); setTimeout(() => { $("fb").textContent = ""; }, 700); next();
   } else {
     d.bad++; $("fb").className = "bad"; $("fb").textContent = `Неверно. Правильный ответ: ${cur[1]}`;
     $("go").textContent = "Дальше"; waitingNext = true; save(); render();
