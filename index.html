@@ -43,6 +43,20 @@
   #fb { min-height: 26px; text-align: center; font-size: 18px; }
   .ok { color: var(--ok); } .bad { color: var(--bad); }
   footer { padding: 14px 0 20px; color: var(--dim); font-size: 14px; text-align: center; }
+
+  /* экран похвалы */
+  #done {
+    display: none; position: fixed; inset: 0; z-index: 10;
+    background: rgba(15,37,64,.96);
+    padding: env(safe-area-inset-top) 24px env(safe-area-inset-bottom);
+    flex-direction: column; align-items: center; justify-content: center; gap: 20px; text-align: center;
+  }
+  #done.show { display: flex; }
+  #done .star { font-size: 64px; }
+  #done h2 { margin: 0; color: var(--accent); font-size: 30px; }
+  #phrase { font-size: 24px; line-height: 1.35; max-width: 420px; }
+  #doneStats { color: var(--dim); font-size: 16px; }
+  #again { width: 100%; max-width: 320px; margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -58,12 +72,30 @@
 </main>
 <footer id="stats"></footer>
 
+<div id="done">
+  <div class="star">★</div>
+  <h2>Норма выполнена!</h2>
+  <div id="phrase"></div>
+  <div id="doneStats"></div>
+  <button id="again">Ещё раз</button>
+</div>
+
 <script>
 const GOAL = 30 * 60;          // норма в секундах
 const BONUS = 2 * 60;          // сколько секунд снимается за правильный ответ
 const KEY = "mathApp.v1";
 const $ = id => document.getElementById(id);
 const r = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
+
+const PRAISE = [
+  "Отличная работа! Мозг сегодня потрудился на славу.",
+  "Норма выполнена. Так держать!",
+  "Ты молодец! Каждый день — шаг вперёд.",
+  "Сильный результат. Завтра будет ещё интереснее.",
+  "Вот это дисциплина! Уважение.",
+  "Блестяще! Цифры сегодня сдались без боя.",
+  "Ещё один день — ещё один уровень. Ты на правильном пути."
+];
 
 // ---------- хранилище ----------
 let S;
@@ -72,7 +104,8 @@ S = S || { days: {} };
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
 const today = () => new Date().toLocaleDateString("sv-SE");   // ГГГГ-ММ-ДД по местному времени
 const day = () => S.days[today()] || (S.days[today()] = { secs: 0, ok: 0, bad: 0 });
-const doneDays = () => Object.entries(S.days).filter(([d, v]) => d !== today() && v.secs >= GOAL).length;
+// день засчитан, если норма набрана (secs >= GOAL) или уже была выполнена раньше (done) — нужно для «Ещё раз»
+const doneDays = () => Object.entries(S.days).filter(([d, v]) => d !== today() && (v.done || v.secs >= GOAL)).length;
 const level = () => 1 + doneDays();   // каждый выполненный день = +1 уровень
 
 // ---------- генератор задач ----------
@@ -97,8 +130,19 @@ function gen(L) {
 }
 
 // ---------- интерфейс ----------
-let cur, waitingNext = false;
+let cur, waitingNext = false, finished = false;
 const mmss = s => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+
+function showFinish() {
+  finished = true;
+  const d = day();
+  d.done = true;
+  save();
+  $("phrase").textContent = PRAISE[r(0, PRAISE.length - 1)];
+  $("doneStats").textContent = `Сегодня: верно ${d.ok}, ошибок ${d.bad}`;
+  $("a").blur();
+  $("done").classList.add("show");
+}
 
 function render() {
   const d = day();
@@ -109,34 +153,47 @@ function render() {
   $("note").textContent = d.secs >= GOAL ? "Норма выполнена. Завтра будет сложнее." : "Таймер идёт, пока приложение открыто.";
   $("streak").textContent = doneDays() ? `выполнено дней: ${doneDays()}` : "";
   $("stats").textContent = `Сегодня: верно ${d.ok}, ошибок ${d.bad}`;
+  if (d.secs >= GOAL && !finished) showFinish();
 }
 function next() {
   cur = gen(level());
   $("q").textContent = cur[0];
   $("a").value = "";
-  $("a").focus();
+  if (!finished) $("a").focus();
 }
 function check() {
+  if (finished) return;
   if (waitingNext) { waitingNext = false; $("fb").textContent = ""; $("go").textContent = "Проверить"; return next(); }
   const v = $("a").value.trim();
   if (v === "") return;
   const d = day();
- if (parseInt(v, 10) === cur[1]) {
-  d.ok++;
-  d.secs = Math.min(GOAL, d.secs + BONUS);   // −2 минуты от оставшегося времени
-  $("fb").className = "ok"; $("fb").textContent = "Верно −2:00";
-  save(); render(); setTimeout(() => { $("fb").textContent = ""; }, 700); next();
+  if (parseInt(v, 10) === cur[1]) {
+    d.ok++;
+    d.secs = Math.min(GOAL, d.secs + BONUS);   // −2 минуты от оставшегося времени
+    $("fb").className = "ok"; $("fb").textContent = "Верно −2:00";
+    save(); render(); setTimeout(() => { $("fb").textContent = ""; }, 700); next();
   } else {
     d.bad++; $("fb").className = "bad"; $("fb").textContent = `Неверно. Правильный ответ: ${cur[1]}`;
     $("go").textContent = "Дальше"; waitingNext = true; save(); render();
   }
 }
+function again() {
+  const d = day();
+  d.secs = 0;            // новый круг: таймер сначала; d.done остаётся, день уже засчитан
+  finished = false;
+  waitingNext = false;
+  $("fb").textContent = "";
+  $("go").textContent = "Проверить";
+  $("done").classList.remove("show");
+  save(); render(); next();
+}
 $("go").addEventListener("click", check);
+$("again").addEventListener("click", again);
 $("a").addEventListener("keydown", e => { if (e.key === "Enter") check(); });
 
 // таймер: считаем секунды только когда экран приложения виден
 setInterval(() => {
-  if (document.visibilityState !== "visible") return;
+  if (document.visibilityState !== "visible" || finished) return;
   const d = day();
   if (d.secs < GOAL) { d.secs++; if (d.secs % 5 === 0 || d.secs >= GOAL) save(); render(); }
 }, 1000);
