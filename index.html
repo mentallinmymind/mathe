@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Математика">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f2540">
+<title>Математика 30</title>
+<style>
+  :root { --bg:#0f2540; --grid:#1b3a5e; --ink:#e8f0fa; --dim:#8fa8c4; --accent:#ffd23f; --ok:#6fd89a; --bad:#ff7a7a; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background-color: var(--bg);
+    background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 28px 28px;
+    color: var(--ink);
+    font-family: "Avenir Next", ui-rounded, system-ui, sans-serif;
+    padding: env(safe-area-inset-top) 20px env(safe-area-inset-bottom);
+    display: flex; flex-direction: column; max-width: 520px; margin: 0 auto;
+  }
+  header { padding-top: 20px; display: flex; justify-content: space-between; align-items: baseline; color: var(--dim); font-size: 15px; }
+  header b { color: var(--ink); font-size: 18px; }
+  .timer { margin-top: 18px; font-size: 56px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--accent); }
+  .bar { height: 8px; background: var(--grid); border-radius: 4px; margin-top: 8px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .5s; }
+  .note { min-height: 22px; margin-top: 10px; color: var(--dim); font-size: 15px; }
+  main { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 18px; }
+  #q { font-size: 52px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
+  #a {
+    font-size: 32px; text-align: center; width: 100%; padding: 14px;
+    background: rgba(15,37,64,.9); color: var(--ink); border: 2px solid var(--dim); border-radius: 12px;
+  }
+  #a:focus { outline: 3px solid var(--accent); border-color: var(--accent); }
+  button {
+    font-size: 20px; font-weight: 700; padding: 16px; border: 0; border-radius: 12px;
+    background: var(--accent); color: #0f2540;
+  }
+  button:active { transform: scale(.98); }
+  #fb { min-height: 26px; text-align: center; font-size: 18px; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  footer { padding: 14px 0 20px; color: var(--dim); font-size: 14px; text-align: center; }
+</style>
+</head>
+<body>
+<header><span>День <b id="dayNo">1</b> · уровень <b id="lvl">1</b></span><span id="streak"></span></header>
+<div class="timer" id="timer">30:00</div>
+<div class="bar"><i id="bar"></i></div>
+<div class="note" id="note"></div>
+<main>
+  <div id="q">…</div>
+  <input id="a" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="ответ">
+  <button id="go">Проверить</button>
+  <div id="fb"></div>
+</main>
+<footer id="stats"></footer>
+
+<script>
+const GOAL = 30 * 60;          // норма в секундах
+const KEY = "mathApp.v1";
+const $ = id => document.getElementById(id);
+const r = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
+
+// ---------- хранилище ----------
+let S;
+try { S = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+S = S || { days: {} };
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
+const today = () => new Date().toLocaleDateString("sv-SE");   // ГГГГ-ММ-ДД по местному времени
+const day = () => S.days[today()] || (S.days[today()] = { secs: 0, ok: 0, bad: 0 });
+const doneDays = () => Object.entries(S.days).filter(([d, v]) => d !== today() && v.secs >= GOAL).length;
+const level = () => 1 + doneDays();   // каждый выполненный день = +1 уровень
+
+// ---------- генератор задач ----------
+// [минимальный уровень, функция] — чем выше уровень, тем больше типов и крупнее числа
+const TYPES = [
+  [1, L => { const n = Math.min(10 + 5 * L, 1000), x = r(1, n), y = r(1, n); return [`${x} + ${y}`, x + y]; }],
+  [1, L => { const n = Math.min(10 + 5 * L, 1000), x = r(1, n), y = r(1, x); return [`${x} − ${y}`, x - y]; }],
+  [2, L => { const m = Math.min(12, 3 + L), x = r(2, m), y = r(2, m); return [`${x} × ${y}`, x * y]; }],
+  [3, L => { const m = Math.min(12, 2 + L), y = r(2, m), z = r(2, m); return [`${y * z} ÷ ${y}`, z]; }],
+  [4, L => { const x = r(11, Math.min(99, 9 + 3 * L)), y = r(2, 9); return [`${x} × ${y}`, x * y]; }],
+  [5, L => { const a = r(2, 9 + L), b = r(2, 12), c = r(2, 12); return [`${a} + ${b} × ${c}`, a + b * c]; }],
+  [6, L => { const a = r(2, 9 + L), b = r(2, 12), c = r(2, 12); return [`(${a} + ${b}) × ${c}`, (a + b) * c]; }],
+  [7, L => { const x = r(2, Math.min(30, 5 + L)); return [`${x}²`, x * x]; }],
+  [8, L => { const p = [10, 20, 25, 50][r(0, 3)], b = r(1, 5 + L) * 20; return [`${p}% от ${b}`, p * b / 100]; }],
+  [10, L => { const x = r(12, 99), y = r(11, 99); return [`${x} × ${y}`, x * y]; }],
+];
+function gen(L) {
+  const pool = TYPES.filter(t => t[0] <= L);
+  // новые типы задач выпадают чаще: берём два случайных и выбираем более «новый»
+  const a = pool[r(0, pool.length - 1)], b = pool[r(0, pool.length - 1)];
+  return (a[0] >= b[0] ? a : b)[1](L);
+}
+
+// ---------- интерфейс ----------
+let cur, waitingNext = false;
+const mmss = s => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+
+function render() {
+  const d = day();
+  $("dayNo").textContent = doneDays() + 1;
+  $("lvl").textContent = level();
+  $("timer").textContent = mmss(Math.max(0, GOAL - d.secs));
+  $("bar").style.width = Math.min(100, d.secs / GOAL * 100) + "%";
+  $("note").textContent = d.secs >= GOAL ? "Норма выполнена. Завтра будет сложнее." : "Таймер идёт, пока приложение открыто.";
+  $("streak").textContent = doneDays() ? `выполнено дней: ${doneDays()}` : "";
+  $("stats").textContent = `Сегодня: верно ${d.ok}, ошибок ${d.bad}`;
+}
+function next() {
+  cur = gen(level());
+  $("q").textContent = cur[0];
+  $("a").value = "";
+  $("a").focus();
+}
+function check() {
+  if (waitingNext) { waitingNext = false; $("fb").textContent = ""; $("go").textContent = "Проверить"; return next(); }
+  const v = $("a").value.trim();
+  if (v === "") return;
+  const d = day();
+  if (parseInt(v, 10) === cur[1]) {
+    d.ok++; $("fb").className = "ok"; $("fb").textContent = "Верно"; save(); render(); setTimeout(() => { $("fb").textContent = ""; }, 700); next();
+  } else {
+    d.bad++; $("fb").className = "bad"; $("fb").textContent = `Неверно. Правильный ответ: ${cur[1]}`;
+    $("go").textContent = "Дальше"; waitingNext = true; save(); render();
+  }
+}
+$("go").addEventListener("click", check);
+$("a").addEventListener("keydown", e => { if (e.key === "Enter") check(); });
+
+// таймер: считаем секунды только когда экран приложения виден
+setInterval(() => {
+  if (document.visibilityState !== "visible") return;
+  const d = day();
+  if (d.secs < GOAL) { d.secs++; if (d.secs % 5 === 0 || d.secs >= GOAL) save(); render(); }
+}, 1000);
+document.addEventListener("visibilitychange", () => { save(); render(); });
+
+render(); next();
+</script>
+</body>
+</html>
